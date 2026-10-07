@@ -1,0 +1,11 @@
+{
+  "name": "300.ts",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsc && node dist/tests.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

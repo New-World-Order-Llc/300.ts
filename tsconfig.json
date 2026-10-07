@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "es2020",
+    "module": "commonjs",
+    "outDir": "dist",
+    "types": []
+  },
+  "files": [
+    "300.ts",
+    "pipeline.ts",
+    "routing-municipal.ts",
+    "routing-state.ts",
+    "routing-federal.ts",
+    "tests.ts"
+  ]
+}

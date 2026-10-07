@@ -1,3 +1,7 @@
+import { resolveMunicipalTarget } from "./routing-municipal";
+import { resolveStateTarget } from "./routing-state";
+import { resolveFederalTarget } from "./routing-federal";
+
 /**
  * Program 300 – Government Benefits Automation
  * Program Family: GOVERNMENT_300
@@ -56,6 +60,8 @@ interface CaseRecord {
   errors: string[];
   program: ProgramCode | null;
   routingTarget: string | null;
+  stateTarget: string | null;
+  federalTarget: string | null;
   status: CaseStatus;
 }
 
@@ -131,8 +137,12 @@ function classifyProgram(category: unknown): ProgramCode | null {
 }
 
 /** Deterministic routing target. */
-function inferRoutingTarget(_program: ProgramCode): string {
-  return DEFAULT_ROUTING_TARGET;
+function inferRoutingTarget(
+  _program: ProgramCode,
+  route: { category: string; citizenId: string },
+): string {
+  if (route.citizenId.trim().length === 0) return DEFAULT_ROUTING_TARGET;
+  return resolveMunicipalTarget(route);
 }
 
 const CLOCK_EPOCH_MS = Date.UTC(2000, 0, 1);
@@ -162,7 +172,13 @@ export function createCase(input: CaseInput): Program300Result {
   const errors = validateCase(input);
   const valid = errors.length === 0;
   const program = valid ? classifyProgram(i.category) : null;
-  const routingTarget = program ? inferRoutingTarget(program) : null;
+  const route = {
+    category: typeof i.category === "string" ? i.category : "",
+    citizenId: typeof i.citizenId === "string" ? i.citizenId : "",
+  };
+  const routingTarget = program ? inferRoutingTarget(program, route) : null;
+  const stateTarget = program ? resolveStateTarget(route) : null;
+  const federalTarget = program ? resolveFederalTarget(route) : null;
 
   const record: CaseRecord = {
     programFamily: PROGRAM_METADATA.programFamily,
@@ -180,6 +196,8 @@ export function createCase(input: CaseInput): Program300Result {
     errors,
     program,
     routingTarget,
+    stateTarget,
+    federalTarget,
     status: valid ? "ROUTED" : "REJECTED",
   };
 
@@ -199,6 +217,8 @@ export function createCase(input: CaseInput): Program300Result {
         ...(record.programHint !== undefined ? { programHint: record.programHint } : {}),
         resolvedProgram: program,
         routingTarget,
+        stateTarget,
+        federalTarget,
       }),
     );
   } else {
