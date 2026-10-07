@@ -12,8 +12,8 @@ export const PROGRAM_METADATA = {
   name: "Government Benefits Automation",
 } as const;
 
-export type Category = "DISABILITY" | "HOUSING" | "HEALTH" | "GENERAL";
-export type ProgramCode =
+type Category = "DISABILITY" | "HOUSING" | "HEALTH" | "GENERAL";
+type ProgramCode =
   | "300-DISABILITY"
   | "300-HOUSING"
   | "300-HEALTH"
@@ -28,22 +28,22 @@ export interface CaseInput {
   programHint?: string;
 }
 
-export type EventType =
+type EventType =
   | "CASE_CREATED"
   | "CASE_VALIDATED"
   | "CASE_REJECTED"
   | "CASE_ROUTED";
 
-export interface AuditEvent {
+interface AuditEvent {
   type: EventType;
   timestamp: string;
   caseId: string;
   details: Record<string, unknown>;
 }
 
-export type CaseStatus = "ROUTED" | "REJECTED";
+type CaseStatus = "ROUTED" | "REJECTED";
 
-export interface CaseRecord {
+interface CaseRecord {
   programFamily: string;
   programId: string;
   caseId: string;
@@ -64,7 +64,7 @@ export interface Program300Result {
   events: AuditEvent[];
 }
 
-export const DEFAULT_ROUTING_TARGET = "MUNICIPAL-HUB-PRIMARY";
+const DEFAULT_ROUTING_TARGET = "MUNICIPAL-HUB-PRIMARY";
 
 const CATEGORY_TO_PROGRAM: Readonly<Record<Category, ProgramCode>> = {
   DISABILITY: "300-DISABILITY",
@@ -92,7 +92,7 @@ function isValidIso(v: string): boolean {
 }
 
 /** Returns a deterministic, ordered list of validation errors. */
-export function validateCase(input: CaseInput): string[] {
+function validateCase(input: CaseInput): string[] {
   const errors: string[] = [];
   const i = (input ?? {}) as Partial<CaseInput>;
 
@@ -126,13 +126,23 @@ export function validateCase(input: CaseInput): string[] {
 }
 
 /** Maps category to program code. Returns null for invalid categories. */
-export function classifyCase(category: unknown): ProgramCode | null {
+function classifyProgram(category: unknown): ProgramCode | null {
   return isValidCategory(category) ? CATEGORY_TO_PROGRAM[category] : null;
 }
 
 /** Deterministic routing target. */
-export function routeCase(_program: ProgramCode): string {
+function inferRoutingTarget(_program: ProgramCode): string {
   return DEFAULT_ROUTING_TARGET;
+}
+
+const CLOCK_EPOCH_MS = Date.UTC(2000, 0, 1);
+
+/** Deterministic clock: each call returns the next ISO timestamp (1 ms apart). */
+function createClock(): () => string {
+  let tick = 0;
+  return function nowIso(): string {
+    return new Date(CLOCK_EPOCH_MS + tick++).toISOString();
+  };
 }
 
 function event(
@@ -147,20 +157,19 @@ function event(
 export function createCase(input: CaseInput): Program300Result {
   const i = (input ?? {}) as Partial<CaseInput>;
   const caseId = typeof i.caseId === "string" ? i.caseId : "";
-  // Events use the submission timestamp so output is fully deterministic.
-  const timestamp = typeof i.submittedAt === "string" ? i.submittedAt : "";
+  const nowIso = createClock();
 
   const errors = validateCase(input);
   const valid = errors.length === 0;
-  const program = valid ? classifyCase(i.category) : null;
-  const routingTarget = program ? routeCase(program) : null;
+  const program = valid ? classifyProgram(i.category) : null;
+  const routingTarget = program ? inferRoutingTarget(program) : null;
 
   const record: CaseRecord = {
     programFamily: PROGRAM_METADATA.programFamily,
     programId: PROGRAM_METADATA.programId,
     caseId,
     citizenId: typeof i.citizenId === "string" ? i.citizenId : "",
-    submittedAt: timestamp,
+    submittedAt: typeof i.submittedAt === "string" ? i.submittedAt : "",
     category: typeof i.category === "string" ? i.category : "",
     payload:
       typeof i.payload === "object" && i.payload !== null && !Array.isArray(i.payload)
@@ -175,7 +184,7 @@ export function createCase(input: CaseInput): Program300Result {
   };
 
   const events: AuditEvent[] = [
-    event("CASE_CREATED", timestamp, caseId, {
+    event("CASE_CREATED", nowIso(), caseId, {
       programFamily: record.programFamily,
       programId: record.programId,
       citizenId: record.citizenId,
@@ -185,16 +194,16 @@ export function createCase(input: CaseInput): Program300Result {
 
   if (valid) {
     events.push(
-      event("CASE_VALIDATED", timestamp, caseId, { errorCount: 0 }),
-      event("CASE_ROUTED", timestamp, caseId, {
-        program,
+      event("CASE_VALIDATED", nowIso(), caseId, { errorCount: 0 }),
+      event("CASE_ROUTED", nowIso(), caseId, {
+        ...(record.programHint !== undefined ? { programHint: record.programHint } : {}),
+        resolvedProgram: program,
         routingTarget,
-        programHint: record.programHint ?? null,
       }),
     );
   } else {
     events.push(
-      event("CASE_REJECTED", timestamp, caseId, {
+      event("CASE_REJECTED", nowIso(), caseId, {
         errorCount: errors.length,
         errors,
       }),
